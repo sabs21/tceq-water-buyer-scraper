@@ -124,9 +124,31 @@ fn main() {
         }
         //println!("{:#?}", header);
     }
-
+    
+    // In case there are headers missing from the input,
+    // show the user which headers are missing.
     if header_map.len() != 3 {
-        panic!("Not all headers were mapped to a column in the input file. Did you include the -w, -n, and -s arguments in the command?");
+        let mut missing_headers_list: Vec<String> = Vec::new();
+        if header_map.get(is_header_arg).is_none() {
+            missing_headers_list.push(is_header_arg.clone());
+        }
+        if header_map.get(st_header_arg).is_none() {
+            missing_headers_list.push(st_header_arg.clone());
+        }
+        if header_map.get(ws_header_arg).is_none() {
+            missing_headers_list.push(ws_header_arg.clone());
+        }
+        let missing_headers: String = 
+            missing_headers_list
+                .iter_mut()
+                .fold("".to_string(), |mut acc, h| {
+                    if acc.len() > 0 {
+                        acc.push_str(", ");
+                    }
+                    acc.push_str(h);
+                    acc
+                });
+        panic!("Missing headers from input file: {}. Double check the header names that were supplied to the -w, -n, and -s arguments.", missing_headers);
     }
 
     // check if the file exists or has any problems opening
