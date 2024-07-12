@@ -7,6 +7,19 @@ pub struct WaterDetail {
     pub ws_number: String 
 }
 
+impl WaterDetail {
+    fn url(& self) -> minreq::URL {
+        minreq::URL::from("https://dww2.tceq.texas.gov/DWW/JSP/WaterSystemDetail.jsp?tinwsys_is_number=".to_string() 
+            + &self.is_number 
+            + "&tinwsys_st_code=" 
+            + &self.st_code 
+            + "&wsnumber=" 
+            + &self.ws_number 
+            + "%20%20%20&DWWState="
+            + &self.st_code)
+    }
+}
+
 fn main() {
     std::env::set_var("RUST_BACKTRACE", "1");
 
@@ -39,6 +52,17 @@ fn main() {
                 .help("Choose a path to store water data.")
                 .action(ArgAction::Set)
                 .default_value(default_output_path)
+        )
+        .arg(
+            arg!(-d <DELAY>)
+                .value_parser(value_parser!(u32))
+                .id("delay")
+                .long("delay")
+                .required(false)
+                .help("Delay (milliseconds) between website requests.")
+                .long_help("To avoid getting IP blocked for large requests, add a delay between each request to the website.")
+                .action(ArgAction::Set)
+                .default_value("3000")
         )
         .arg(
             arg!(-w <WS_NUMBER_HEADER>)
@@ -104,8 +128,9 @@ fn main() {
     } 
     
     //println!("input: {} | output: {}", input_file_path.to_str().unwrap(), output_file_path.to_str().unwrap());
-    
+
     // Map headers set in arguments to headers from input file
+    println!("Reading headers from input...");
     let mut reader = csv::Reader::from_path(input_file_path).unwrap();
     let st_header_arg: &String = &arg_matches.get_one::<String>("header_state").expect("header_state is missing a default value.").to_string();
     let ws_header_arg: &String= &arg_matches.get_one::<String>("header_ws").expect("header_ws is missing a default value.").to_string();
@@ -150,11 +175,13 @@ fn main() {
                 });
         panic!("Missing headers from input file: {}. Double check the header names that were supplied to the -w, -n, and -s arguments.", missing_headers);
     }
+    println!("Headers successfully read.");
 
     // check if the file exists or has any problems opening
     // if so, print error and abort
     // otherwise, read the file into memory
     //let water_details: Vec<WaterDetail> = Vec::new();
+    println!("Reading rows from input...");
     let water_details: Vec<WaterDetail> = 
         reader 
             .records()
@@ -166,7 +193,30 @@ fn main() {
                 }
             })
             .collect();
+    println!("Rows successfully read.");
+    
+
+    // Get HTML page of each water detail url
+    let delay: u32 = *arg_matches.get_one::<u32>("delay").expect("output file is missing a default value.");
+    println!("Sending requests for each water detail every {} milliseconds...", delay);
     for detail in water_details.iter() {
-        println!("{:#?}", detail);
+        // Debugging purposes
+        //println!("{:#?}", detail);
+        let url: minreq::URL = detail.url();
+        match minreq::get(&url).send() {
+            Ok(response) => {
+                if response.status_code != 200 {
+                    println!("Failed to extract data because the response status was not OK. Status code: {} | Reason: {} | Url: {}", response.status_code, response.reason_phrase, url)
+                }
+                else {
+                    println!("Parsing URL... ({})", url);
+                    println!("Response: {}", response.as_str().unwrap());
+                }
+            },
+            Err(e) => println!("Failed to extract data because the request was unsuccessful. Error: {}", e)
+        }
     }
+
+    // Get tecq water data page
+
 }
