@@ -1,11 +1,5 @@
 use clap::{arg, value_parser, Command, ArgAction};
 
-/*pub struct WaterDetailHeaderMap {
-    pub is_number: usize,
-    pub st_code: usize,
-    pub ws_number: usize
-}*/
-
 #[derive(Default, Debug)]
 pub struct WaterDetail {
     pub is_number: String,
@@ -32,7 +26,7 @@ fn main() {
                 .id("input")
                 .long("input")
                 .required(true)
-                .help("Provide a list of identifying water detail info as a CSV file.")
+                .help("Provide a path to a csv file that contains TCEQ water detail info.")
                 .long_help("CSV should consist of three columns:\n\ttinwsys_is_number\n\ttinwsys_st_code\n\twsnumber\nAll of these values can be found in the URL of the water detail page. (Example: https://dww2.tceq.texas.gov/DWW/JSP/WaterSystemDetail.jsp?tinwsys_is_number=5969&tinwsys_st_code=TX&wsnumber=TX2270001%20%20%20&DWWState=TX)")
                 .action(ArgAction::Set)
         )
@@ -42,7 +36,7 @@ fn main() {
                 .id("output")
                 .long("output")
                 .required(false)
-                .help("Choose where to store water data into.")
+                .help("Choose a path to store water data.")
                 .action(ArgAction::Set)
                 .default_value(default_output_path)
         )
@@ -109,7 +103,7 @@ fn main() {
         panic!("Output file is not a csv.");
     } 
     
-    println!("input: {} | output: {}", input_file_path.to_str().unwrap(), output_file_path.to_str().unwrap());
+    //println!("input: {} | output: {}", input_file_path.to_str().unwrap(), output_file_path.to_str().unwrap());
     
     // Map headers set in arguments to headers from input file
     let mut reader = csv::Reader::from_path(input_file_path).unwrap();
@@ -134,10 +128,6 @@ fn main() {
     if header_map.len() != 3 {
         panic!("Not all headers were mapped to a column in the input file. Did you include the -w, -n, and -s arguments in the command?");
     }
-    //println!("{:#?}", header_map);
-    /*reader.headers().map(|h| {
-        match
-    });*/
 
     // check if the file exists or has any problems opening
     // if so, print error and abort
@@ -157,20 +147,4 @@ fn main() {
     for detail in water_details.iter() {
         println!("{:#?}", detail);
     }
-
-    /*match csv::Reader::from_path(input_file) {
-        Ok(mut reader) => {
-            reader.records().map(|row| {
-                water_details
-            });
-        }
-        Err(e) => panic!("{}", e),
-    }*/
-    /*Arg::with_name("input")
-                .short("i")
-                .long("input")
-                .value_name("CSV_FILE")
-                .help("Input a csv file containing a list of water system ID's")
-                .takes_value(true)
-*/
 }
