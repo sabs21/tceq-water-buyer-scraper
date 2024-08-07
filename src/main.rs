@@ -1,5 +1,4 @@
 use clap::{arg, value_parser, Command, ArgAction};
-use core::cell::Cell;
 use html5ever::tendril::TendrilSink;
 
 #[derive(Default, Debug)]
