@@ -1,5 +1,4 @@
 use clap::{arg, value_parser, Command, ArgAction};
-use html5ever::tendril::TendrilSink;
 
 #[derive(Default, Debug)]
 pub struct WaterDetail {
@@ -22,7 +21,9 @@ impl WaterDetail {
 }
 
 fn main() {
-    std::env::set_var("RUST_BACKTRACE", "1");
+    unsafe {
+        std::env::set_var("RUST_BACKTRACE", "1");
+    }
 
     // Make the default output file name: /current/env/path/[datetime]_out.csv
     let mut default_output_path: std::ffi::OsString = std::env::current_dir().unwrap().as_os_str().to_owned();
@@ -195,13 +196,10 @@ fn main() {
             })
             .collect();
     println!("Rows successfully read.");
-    
 
     // Get HTML page of each water detail url
     let delay: u32 = *arg_matches.get_one::<u32>("delay").expect("output file is missing a default value.");
     println!("Sending requests for each water detail every {} milliseconds...", delay);
-    let mut parse_opts = html5ever::driver::ParseOpts::default();
-    parse_opts.tree_builder.scripting_enabled = false;
     for (idx, detail) in water_details.iter().enumerate() {
         // Debugging purposes
         //println!("{:#?}", detail);
@@ -213,152 +211,54 @@ fn main() {
                 }
                 else {
                     println!("Parsing URL (Row {})... ({})", idx+1, url);
-                    //println!("Response: {}", response.as_str().unwrap());
-                    //response.as_str().
-                    //let stdin = io::stdin();
-                    let dom = html5ever::parse_document(
-                        markup5ever_rcdom::RcDom::default(),
-                        parse_opts.clone()
-                    )
-                    .from_utf8()
-                    //.read_from(&mut stdin.lock());
-                    .read_from(&mut std::io::BufReader::new(response.as_bytes()))
-                    .unwrap();
-
-                    //dom.document.children
-                    //.from_utf8()
-                    //.read_from(response.as_bytes())
-                    //walk(0, &dom.document);
-                    let ignore_chars: &[char] = &['\t', '\n'];
-                    let table_title = "Buyers of Water";
-                    let table_text_node = find_by_text(&table_title, &dom.document, ignore_chars);
-                    if table_text_node.is_some() {
-                        let parent_table = parent_element(&table_text_node.unwrap());
-                        if parent_table.is_some() {
-                            let table = parent_table.expect("Unable to access parent table");
-                            match table.data {
-                                markup5ever_rcdom::NodeData::Element { ref name, ref attrs, ref template_contents, .. } => {
-                                    println!("found parent table! name: {:?} | attrs: {:?} | contents: {:?}", name, attrs, template_contents);
-                                },
-                                _ => println!("parent table node type is not element")
+                    // Get tecq water data page
+                    let dom = scraper::Html::parse_document(response.as_str().expect("Failed to parse webpage."));
+                    let table_selector = scraper::Selector::parse("body table tbody tr td table").expect("Unable to find a table within the webpage.");
+                    let water_buyer_table: Option<scraper::ElementRef> = 
+                        dom
+                            .select(&table_selector)
+                            .filter(|el| {
+                                //if let Some(header) = el.select(table_header_selector)
+                                let mut text_iter = el.text().filter(|t| !t.trim().is_empty());
+                                if let Some(first_header_text) = text_iter.next() {
+                                    let txt = first_header_text.trim();
+                                    return txt == "Buyers of Water"
+                                }
+                                return false
+                            })
+                            .collect::<Vec<scraper::ElementRef>>()
+                            .first()
+                            .copied();
+                    if let Some(wbt) = water_buyer_table {
+                        let row_selector = scraper::Selector::parse("tbody tr td").expect("Unable to find table rows");
+                        //println!("Found buyers of water table!");
+                        let whitespace_regex = regex::Regex::new(r"\s+").unwrap();
+                        let root_rows = 
+                            wbt
+                                .select(&row_selector)
+                                
+                                /*.filter(|r| {
+                                    let mut text_iter = r.text().filter(|t| !t.starts_with(" "));
+                                    if let Some(t) = text_iter.next() {
+                                        return !t.is_empty()
+                                    }
+                                    return false
+                                })*/
+                                .collect::<Vec<scraper::ElementRef>>();
+                        let mut relationships: Vec<String> = Vec::new();
+                        for row in root_rows {
+                            //println!("row text: {}", row.text().next().unwrap_or(""));
+                            for t in row.text() {
+                                relationships.push(whitespace_regex.replace_all(t, " ").into_owned());
                             }
-                        } else {
-                            println!("parent table not found");
                         }
-                        
-                        /*match &table_text_node.unwrap().data {
-                            markup5ever_rcdom::NodeData::Text { ref contents } => {
-                                let text_content = contents.borrow().escape_default().to_string();
-                                println!("table text node contents: {}", text_content);
-                            },
-                            _ => println!("The wrong node type was returned")
-                        }*/
-                    } else {
-                        println!("{} table text node is None.", table_title);
+                        for r in relationships.iter() {
+                            println!("{}", r);
+                        }
                     }
                 }
             },
             Err(e) => println!("Failed to extract data because the request was unsuccessful. CSV Row number: {} | Error: {}", idx+1, e)
         }
     }
-
-    // Get tecq water data page
-
 }
-
-fn parent_element(node: &markup5ever_rcdom::Handle) -> Option<markup5ever_rcdom::Handle> {
-    let mut p: Option<markup5ever_rcdom::Handle> = Some(node.clone());
-    while p.is_some() {
-        let p_handle = p.expect("Parent node is missing.");
-        match p_handle.data {
-            markup5ever_rcdom::NodeData::Element { .. } => {
-                return Some(p_handle);
-            },
-            _ => { }
-        }
-        match p_handle.parent.take() {
-            Some(p_weak) => {
-                p = p_weak.upgrade();
-            },
-            None => return None
-        }
-    }
-    return None
-}
-
-fn find_by_text(table_name: &str, node: &markup5ever_rcdom::Handle, ignore_chars: &[char]) -> Option<markup5ever_rcdom::Handle> {
-    match node.data {
-        markup5ever_rcdom::NodeData::Text { ref contents } => {
-            let text_content = contents.borrow().to_string().trim().replace(ignore_chars, "");
-            println!("text content: {}", text_content);
-            if text_content.eq(table_name) {
-                println!("Found table: {}", text_content);
-                return Some(node.clone())
-            }
-            //println!("#text: {}", contents.borrow().escape_default())
-        },
-        /*markup5ever_rcdom::NodeData::Element { ref template_contents, .. } => {
-            let text_content = template_contents.borrow().unwrap().data.;
-            if text_content.eq(table_name) {
-                println!("Found table: {}", text_content);
-                return Some(node.clone())
-            }
-        },*/
-        _ => { }
-    }
-    
-    for child in node.children.borrow().iter() {
-        let h = find_by_text(table_name, child, ignore_chars);
-        if h.is_some() {
-            return h
-        }
-    }
-
-    return None
-
-    /*for child in node.children.borrow().iter() {
-        walk(indent + 4, child);
-    }*/
-}
-
-/*fn walk(indent: usize, handle: &markup5ever_rcdom::Handle) {
-    let node = handle;
-    for _ in 0..indent {
-        print!(" ");
-    }
-    match node.data {
-        markup5ever_rcdom::NodeData::Document => println!("#Document"),
-
-        markup5ever_rcdom::NodeData::Doctype {
-            ref name,
-            ref public_id,
-            ref system_id,
-        } => println!("<!DOCTYPE {} \"{}\" \"{}\">", name, public_id, system_id),
-
-        markup5ever_rcdom::NodeData::Text { ref contents } => {
-            println!("#text: {}", contents.borrow().escape_default())
-        },
-
-        markup5ever_rcdom::NodeData::Comment { ref contents } => println!("<!-- {} -->", contents.escape_default()),
-
-        markup5ever_rcdom::NodeData::Element {
-            ref name,
-            ref attrs,
-            ..
-        } => {
-            //assert!(name.ns == ns!(html));
-            print!("<{}", name.local);
-            for attr in attrs.borrow().iter() {
-                //assert!(attr.name.ns == ns!());
-                print!(" {}=\"{}\"", attr.name.local, attr.value);
-            }
-            println!(">");
-        },
-
-        markup5ever_rcdom::NodeData::ProcessingInstruction { .. } => unreachable!(),
-    }
-
-    for child in node.children.borrow().iter() {
-        walk(indent + 4, child);
-    }
-}*/
