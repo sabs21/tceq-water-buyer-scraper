@@ -236,20 +236,11 @@ fn main() {
                         let root_rows = 
                             wbt
                                 .select(&row_selector)
-                                
-                                /*.filter(|r| {
-                                    let mut text_iter = r.text().filter(|t| !t.starts_with(" "));
-                                    if let Some(t) = text_iter.next() {
-                                        return !t.is_empty()
-                                    }
-                                    return false
-                                })*/
                                 .collect::<Vec<scraper::ElementRef>>();
                         let mut relationships: Vec<String> = Vec::new();
                         for row in root_rows {
-                            //println!("row text: {}", row.text().next().unwrap_or(""));
-                            for t in row.text() {
-                                relationships.push(whitespace_regex.replace_all(t, " ").into_owned());
+                            for txt in row.text().filter(|t| !t.trim().is_empty()) {
+                                relationships.push(whitespace_regex.replace_all(txt, " ").into_owned());
                             }
                         }
                         for r in relationships.iter() {
