@@ -232,19 +232,45 @@ fn main() {
                     if let Some(wbt) = water_buyer_table {
                         let row_selector = scraper::Selector::parse("tbody tr td").expect("Unable to find table rows");
                         //println!("Found buyers of water table!");
+                        let column_delimiter_regex = regex::Regex::new(r" - |sells to|\/").unwrap();
                         let whitespace_regex = regex::Regex::new(r"\s+").unwrap();
-                        let root_rows = 
+                        let rows = 
                             wbt
                                 .select(&row_selector)
                                 .collect::<Vec<scraper::ElementRef>>();
-                        let mut relationships: Vec<String> = Vec::new();
-                        for row in root_rows {
+                        let mut relationships: Vec<Vec<String>> = Vec::new();
+                        for row in rows {
+                            // Deserialize raw relationship text
+                            // The order of the relationship data is as follows:
+                            // 1. Seller's Water System ID
+                            // 2. Name of Buyer
+                            // 3. Buyer's Water System ID
+                            // 4. Population
+                            // 5. Availability (can be blank)
+                            let mut row_data: Vec<String> = Vec::new();
                             for txt in row.text().filter(|t| !t.trim().is_empty()) {
-                                relationships.push(whitespace_regex.replace_all(txt, " ").into_owned());
+                                let relationship_text = whitespace_regex.replace_all(txt, " ");
+                                if column_delimiter_regex.is_match(&relationship_text) {
+                                    for m in column_delimiter_regex.split(&relationship_text).filter(|res| !res.trim().is_empty()) {
+                                        row_data.push(m.trim().to_string());
+                                    }
+                                }
+                                else {
+                                    row_data.push(relationship_text.trim().to_string());
+                                }
                             }
+                            // In case availability is left blank, we must add 
+                            // an empty string to row data so that the length is 5.
+                            while row_data.len() < 5 {
+                                row_data.push("".to_string());
+                            }
+                            relationships.push(row_data);
                         }
-                        for r in relationships.iter() {
-                            println!("{}", r);
+                        for (r_idx, r) in relationships.iter().enumerate() {
+                            println!("row: {}", r_idx);
+                            for d in r.iter() {
+                                println!("{}", d);
+                            }
                         }
                     }
                 }
