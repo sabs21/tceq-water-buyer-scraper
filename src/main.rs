@@ -1,10 +1,20 @@
 use clap::{arg, value_parser, Command, ArgAction};
 
+
+#[derive(Default, Debug)]
+pub struct BuyerSellerRelationship {
+    pub buyer: String,
+    pub seller: String,
+    pub population: String,
+    pub availability: String
+}
+
 #[derive(Default, Debug)]
 pub struct WaterDetail {
     pub is_number: String,
     pub st_code: String,
-    pub ws_number: String 
+    pub ws_number: String,
+    pub name: Option<String>
 }
 
 impl WaterDetail {
@@ -191,7 +201,8 @@ fn main() {
                 WaterDetail {
                     is_number: record.as_ref().unwrap().get(*header_map.get(is_header_arg).unwrap()).unwrap().to_string(),
                     st_code: record.as_ref().unwrap().get(*header_map.get(st_header_arg).unwrap()).unwrap().to_string(),
-                    ws_number: record.as_ref().unwrap().get(*header_map.get(ws_header_arg).unwrap()).unwrap().to_string()
+                    ws_number: record.as_ref().unwrap().get(*header_map.get(ws_header_arg).unwrap()).unwrap().to_string(),
+                    name: None // Name gets scraped from the page
                 }
             })
             .collect();
@@ -213,32 +224,40 @@ fn main() {
                     println!("Parsing URL (Row {})... ({})", idx+1, url);
                     // Get tecq water data page
                     let dom = scraper::Html::parse_document(response.as_str().expect("Failed to parse webpage."));
-                    let table_selector = scraper::Selector::parse("body table tbody tr td table").expect("Unable to find a table within the webpage.");
-                    let water_buyer_table: Option<scraper::ElementRef> = 
-                        dom
-                            .select(&table_selector)
-                            .filter(|el| {
-                                //if let Some(header) = el.select(table_header_selector)
-                                let mut text_iter = el.text().filter(|t| !t.trim().is_empty());
-                                if let Some(first_header_text) = text_iter.next() {
-                                    let txt = first_header_text.trim();
-                                    return txt == "Buyers of Water"
+                    let mut water_detail_name: Option<String> = None;
+                    let whitespace_regex = regex::Regex::new(r"\s+").unwrap();
+                    // Fetch the name of this water detail
+                    if let Some(info_table) = get_table_by_name(&"Water System Detail Information".to_string(), &dom) {
+                        let cell_header_text_selector = scraper::Selector::parse("tbody tr td").expect("Unable to find header text");
+                        let mut found_header: bool = false;
+                        let cells = info_table.select(&cell_header_text_selector);
+                        for cell in cells {
+                            for raw_txt in cell.text().filter(|t| !t.trim().is_empty()) {
+                                let txt = whitespace_regex.replace_all(raw_txt.trim(), " ");
+                                if found_header {
+                                    water_detail_name = Some(txt.to_string());
+                                    break;
                                 }
-                                return false
-                            })
-                            .collect::<Vec<scraper::ElementRef>>()
-                            .first()
-                            .copied();
-                    if let Some(wbt) = water_buyer_table {
+                                else if txt == "Water System Name:" {
+                                    found_header = true;
+                                }
+                            }
+                            if water_detail_name.is_some() {
+                                break;
+                            }
+                        }
+                    }
+
+                    if let Some(wbt) = get_table_by_name(&"Buyers of Water".to_string(), &dom) {
                         let row_selector = scraper::Selector::parse("tbody tr td").expect("Unable to find table rows");
                         //println!("Found buyers of water table!");
                         let column_delimiter_regex = regex::Regex::new(r" - |sells to|\/").unwrap();
-                        let whitespace_regex = regex::Regex::new(r"\s+").unwrap();
                         let rows = 
                             wbt
                                 .select(&row_selector)
                                 .collect::<Vec<scraper::ElementRef>>();
                         let mut relationships: Vec<Vec<String>> = Vec::new();
+                        //let mut water_details: Vec<WaterDetail> = vec![];
                         for row in rows {
                             // Deserialize raw relationship text
                             // The order of the relationship data is as follows:
@@ -266,16 +285,47 @@ fn main() {
                             }
                             relationships.push(row_data);
                         }
-                        for (r_idx, r) in relationships.iter().enumerate() {
+                        /*for (r_idx, r) in relationships.iter().enumerate() {
                             println!("row: {}", r_idx);
                             for d in r.iter() {
                                 println!("{}", d);
                             }
-                        }
+                        }*/
+                        println!("Finished scraping.");
                     }
                 }
             },
             Err(e) => println!("Failed to extract data because the request was unsuccessful. CSV Row number: {} | Error: {}", idx+1, e)
         }
     }
+}
+
+fn get_table_by_name<'a>(name: &'a String, dom: &'a scraper::Html) -> Option<scraper::ElementRef<'a>> {
+    let table_selector = scraper::Selector::parse("body table tbody tr td table").expect("Unable to find a table within the webpage.");
+    return dom
+            .select(&table_selector)
+            .filter(|el| {
+                //if let Some(header) = el.select(table_header_selector)
+                let mut text_iter = el.text().filter(|t| !t.trim().is_empty());
+                if let Some(first_header_text) = text_iter.next() {
+                    let txt = first_header_text.trim();
+                    return txt == name
+                }
+                return false
+            })
+            .collect::<Vec<scraper::ElementRef>>()
+            .first()
+            .copied()
+}
+
+fn insert_water_detail(water_detail: &WaterDetail) -> Result<i64, rusqlite::Error> {
+    let conn = rusqlite::Connection::open("water_buyer_relationships.db3").unwrap();
+    let sql = std::fs::read_to_string("./src/dex/queries/get_pokemon_by_name.sql").expect("Unable to read ./queries/insert_water_detail.sql");
+    let mut stmt = conn.prepare(&sql).unwrap();
+    return stmt.insert(rusqlite::named_params! {
+        ":water_system_no": water_detail.ws_number,
+        ":name": water_detail.name,
+        ":state_code": water_detail.st_code,
+        ":is_no": water_detail.is_number,
+    });
 }
