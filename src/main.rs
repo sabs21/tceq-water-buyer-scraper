@@ -299,6 +299,11 @@ fn main() {
                                 parsed_water_details.insert(wd.ws_number.clone(), wd);
                             }
                         }
+
+                        // Insert new water details into database
+
+                        // Insert new buyer/seller relationships into database
+                        
                         println!("Finished scraping.");
                     }
                 }
@@ -351,7 +356,7 @@ fn get_value_from_header(header_name: &String, table: &scraper::ElementRef) -> O
 
 fn insert_water_detail(water_detail: &WaterDetail) -> Result<i64, rusqlite::Error> {
     let conn = rusqlite::Connection::open("water_buyer_relationships.db3").unwrap();
-    let sql = std::fs::read_to_string("./src/dex/queries/get_pokemon_by_name.sql").expect("Unable to read ./queries/insert_water_detail.sql");
+    let sql = std::fs::read_to_string("./queries/insert_water_detail.sql").expect("Unable to read ./queries/insert_water_detail.sql");
     let mut stmt = conn.prepare(&sql).unwrap();
     return stmt.insert(rusqlite::named_params! {
         ":water_system_no": water_detail.ws_number,
