@@ -4,6 +4,7 @@ use clap::{arg, value_parser, Command, ArgAction};
 #[derive(Default, Debug)]
 pub struct BuyerSellerRelationship {
     pub buyer: String,
+    pub buyer_name: String,
     pub seller: String,
     pub population: String,
     pub availability: String
@@ -194,7 +195,7 @@ fn main() {
     // otherwise, read the file into memory
     //let water_details: Vec<WaterDetail> = Vec::new();
     println!("Reading rows from input...");
-    let water_details: Vec<WaterDetail> = 
+    let mut input_water_details: Vec<WaterDetail> = 
         reader 
             .records()
             .map(|record| {
@@ -211,7 +212,7 @@ fn main() {
     // Get HTML page of each water detail url
     let delay: u32 = *arg_matches.get_one::<u32>("delay").expect("output file is missing a default value.");
     println!("Sending requests for each water detail every {} milliseconds...", delay);
-    for (idx, detail) in water_details.iter().enumerate() {
+    for (idx, detail) in input_water_details.iter_mut().enumerate() {
         // Debugging purposes
         //println!("{:#?}", detail);
         let url: minreq::URL = detail.url();
@@ -224,30 +225,40 @@ fn main() {
                     println!("Parsing URL (Row {})... ({})", idx+1, url);
                     // Get tecq water data page
                     let dom = scraper::Html::parse_document(response.as_str().expect("Failed to parse webpage."));
-                    let mut water_detail_name: Option<String> = None;
                     let whitespace_regex = regex::Regex::new(r"\s+").unwrap();
                     // Fetch the name of this water detail
-                    if let Some(info_table) = get_table_by_name(&"Water System Detail Information".to_string(), &dom) {
-                        let cell_header_text_selector = scraper::Selector::parse("tbody tr td").expect("Unable to find header text");
-                        let mut found_header: bool = false;
-                        let cells = info_table.select(&cell_header_text_selector);
-                        for cell in cells {
-                            for raw_txt in cell.text().filter(|t| !t.trim().is_empty()) {
-                                let txt = whitespace_regex.replace_all(raw_txt.trim(), " ");
-                                if found_header {
-                                    water_detail_name = Some(txt.to_string());
+                    if detail.name.is_none() {
+                        if let Some(info_table) = get_table_by_name(&"Water System Detail Information".to_string(), &dom) {
+                            let cell_header_text_selector = scraper::Selector::parse("tbody tr td").expect("Unable to find header text");
+                            let mut found_header: bool = false;
+                            let cells = info_table.select(&cell_header_text_selector);
+                            for cell in cells {
+                                for raw_txt in cell.text().filter(|t| !t.trim().is_empty()) {
+                                    let txt = whitespace_regex.replace_all(raw_txt.trim(), " ");
+                                    if found_header {
+                                        detail.name = Some(txt.to_string());
+                                        break;
+                                    }
+                                    else if txt == "Water System Name:" {
+                                        // We store the value of the next sibling cell as the name
+                                        found_header = true;
+                                    }
+                                }
+                                if detail.name.is_some() {
                                     break;
                                 }
-                                else if txt == "Water System Name:" {
-                                    found_header = true;
-                                }
-                            }
-                            if water_detail_name.is_some() {
-                                break;
                             }
                         }
                     }
-
+                    
+                    // The key for the hash map is the water detail number string
+                    let mut parsed_water_details: std::collections::HashMap<String, WaterDetail> = std::collections::HashMap::new();
+                    parsed_water_details.insert(detail.name.clone().unwrap(), WaterDetail {
+                        ws_number: detail.ws_number.clone(),
+                        is_number: detail.is_number.clone(),
+                        st_code: detail.st_code.clone(),
+                        name: detail.name.clone()
+                    });
                     if let Some(wbt) = get_table_by_name(&"Buyers of Water".to_string(), &dom) {
                         let row_selector = scraper::Selector::parse("tbody tr td").expect("Unable to find table rows");
                         //println!("Found buyers of water table!");
@@ -256,7 +267,7 @@ fn main() {
                             wbt
                                 .select(&row_selector)
                                 .collect::<Vec<scraper::ElementRef>>();
-                        let mut relationships: Vec<Vec<String>> = Vec::new();
+                        let mut relationships: Vec<BuyerSellerRelationship> = Vec::new();
                         //let mut water_details: Vec<WaterDetail> = vec![];
                         for row in rows {
                             // Deserialize raw relationship text
@@ -283,14 +294,19 @@ fn main() {
                             while row_data.len() < 5 {
                                 row_data.push("".to_string());
                             }
-                            relationships.push(row_data);
+                            
+                            relationships.push(BuyerSellerRelationship {
+                                seller: row_data[0].clone(),
+                                buyer_name: row_data[1].clone(),
+                                buyer: row_data[2].clone(),
+                                population: row_data[3].clone(),
+                                availability: row_data[4].clone()
+                            });
                         }
-                        /*for (r_idx, r) in relationships.iter().enumerate() {
+                        for (r_idx, r) in relationships.iter().enumerate() {
                             println!("row: {}", r_idx);
-                            for d in r.iter() {
-                                println!("{}", d);
-                            }
-                        }*/
+                            println!("{:#?}", r);
+                        }
                         println!("Finished scraping.");
                     }
                 }
