@@ -1,5 +1,7 @@
 use clap::{arg, value_parser, Command, ArgAction};
 
+// Includes necessary sql queries into the shipped exe
+static INSERT_WATER_DETAIL_SQL: &'static str = include_str!("../src/queries/insert_water_detail.sql");
 
 #[derive(Default, Debug)]
 pub struct BuyerSellerRelationship {
@@ -10,7 +12,7 @@ pub struct BuyerSellerRelationship {
     pub availability: String
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct WaterDetail {
     pub is_number: Option<String>,
     pub st_code: String,
@@ -35,7 +37,8 @@ fn main() {
     unsafe {
         std::env::set_var("RUST_BACKTRACE", "1");
     }
-
+    
+    
     // Make the default output file name: /current/env/path/[datetime]_out.csv
     let mut default_output_path: std::ffi::OsString = std::env::current_dir().unwrap().as_os_str().to_owned();
     let since_epoch: u64 = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
@@ -234,12 +237,16 @@ fn main() {
                     }
                     // The key for the hash map is the water detail number string
                     let mut parsed_water_details: std::collections::HashMap<String, WaterDetail> = std::collections::HashMap::new();
-                    parsed_water_details.insert(detail.name.clone().unwrap(), WaterDetail {
+                    let root_water_detail = WaterDetail {
                         ws_number: detail.ws_number.clone(),
                         is_number: detail.is_number.clone(),
                         st_code: detail.st_code.clone(),
                         name: detail.name.clone()
-                    });
+                    };
+                    parsed_water_details.insert(detail.name.clone().unwrap(), root_water_detail.clone());
+                    if insert_water_detail(&root_water_detail).is_err() {
+                        println!("Failed to write water detail {} to database.", root_water_detail.ws_number);
+                    }
                     if let Some(wbt) = get_table_by_name(&"Buyers of Water".to_string(), &dom) {
                         let row_selector = scraper::Selector::parse("tbody tr td").expect("Unable to find table rows");
                         //println!("Found buyers of water table!");
@@ -285,7 +292,7 @@ fn main() {
                                 });
                             }
                         }
-                        for (r_idx, r) in relationships.iter().enumerate() {
+                        for r in relationships.iter() {
                             //println!("row: {}", r_idx);
                             //println!("{:#?}", r);
                             if parsed_water_details.get(&r.buyer.clone()).is_none() {
@@ -296,11 +303,13 @@ fn main() {
                                     is_number: None
                                 };
                                 println!("{:#?}", wd);
-                                parsed_water_details.insert(wd.ws_number.clone(), wd);
+                                parsed_water_details.insert(wd.ws_number.clone(), wd.clone());
+                                // Insert new water details into database
+                                if insert_water_detail(&wd).is_err() {
+                                    println!("Failed to write water detail {} to database.", wd.ws_number);
+                                }
                             }
                         }
-
-                        // Insert new water details into database
 
                         // Insert new buyer/seller relationships into database
                         
@@ -355,13 +364,13 @@ fn get_value_from_header(header_name: &String, table: &scraper::ElementRef) -> O
 }
 
 fn insert_water_detail(water_detail: &WaterDetail) -> Result<i64, rusqlite::Error> {
-    let conn = rusqlite::Connection::open("water_buyer_relationships.db3").unwrap();
-    let sql = std::fs::read_to_string("./queries/insert_water_detail.sql").expect("Unable to read ./queries/insert_water_detail.sql");
-    let mut stmt = conn.prepare(&sql).unwrap();
-    return stmt.insert(rusqlite::named_params! {
+    let conn = rusqlite::Connection::open("./water_buyer_relationships.db3").unwrap();
+    let mut stmt = conn.prepare(INSERT_WATER_DETAIL_SQL).unwrap();
+    let result = stmt.insert(rusqlite::named_params! {
         ":water_system_no": water_detail.ws_number,
         ":name": water_detail.name,
         ":state_code": water_detail.st_code,
         ":is_no": water_detail.is_number,
     });
+    return result
 }
