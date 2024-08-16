@@ -212,6 +212,7 @@ fn main() {
     // Get HTML page of each water detail url
     let delay: u32 = *arg_matches.get_one::<u32>("delay").expect("output file is missing a default value.");
     println!("Sending requests for each water detail every {} milliseconds...", delay);
+    let whitespace_regex = regex::Regex::new(r"\s+").unwrap();
     for (idx, detail) in input_water_details.iter_mut().enumerate() {
         // Debugging purposes
         //println!("{:#?}", detail);
@@ -225,32 +226,12 @@ fn main() {
                     println!("Parsing URL (Row {})... ({})", idx+1, url);
                     // Get tecq water data page
                     let dom = scraper::Html::parse_document(response.as_str().expect("Failed to parse webpage."));
-                    let whitespace_regex = regex::Regex::new(r"\s+").unwrap();
                     // Fetch the name of this water detail
                     if detail.name.is_none() {
                         if let Some(info_table) = get_table_by_name(&"Water System Detail Information".to_string(), &dom) {
-                            let cell_header_text_selector = scraper::Selector::parse("tbody tr td").expect("Unable to find header text");
-                            let mut found_header: bool = false;
-                            let cells = info_table.select(&cell_header_text_selector);
-                            for cell in cells {
-                                for raw_txt in cell.text().filter(|t| !t.trim().is_empty()) {
-                                    let txt = whitespace_regex.replace_all(raw_txt.trim(), " ");
-                                    if found_header {
-                                        detail.name = Some(txt.to_string());
-                                        break;
-                                    }
-                                    else if txt == "Water System Name:" {
-                                        // We store the value of the next sibling cell as the name
-                                        found_header = true;
-                                    }
-                                }
-                                if detail.name.is_some() {
-                                    break;
-                                }
-                            }
+                            detail.name = get_value_from_header(&"Water System Name:".to_string(), &info_table);
                         }
                     }
-                    
                     // The key for the hash map is the water detail number string
                     let mut parsed_water_details: std::collections::HashMap<String, WaterDetail> = std::collections::HashMap::new();
                     parsed_water_details.insert(detail.name.clone().unwrap(), WaterDetail {
@@ -332,6 +313,29 @@ fn get_table_by_name<'a>(name: &'a String, dom: &'a scraper::Html) -> Option<scr
             .collect::<Vec<scraper::ElementRef>>()
             .first()
             .copied()
+}
+
+// Finds a header (the key), then returns the value
+// NOTE: if the header in TCEQ includes a colon (i.e., "Water System Name:"), 
+// then header_name needs that colon too.
+fn get_value_from_header(header_name: &String, table: &scraper::ElementRef) -> Option<String> {
+    let whitespace_regex = regex::Regex::new(r"\s+").unwrap();
+    let cell_header_text_selector = scraper::Selector::parse("tbody tr td").expect("Unable to find header text");
+    let mut found_header: bool = false;
+    let cells = table.select(&cell_header_text_selector);
+    for cell in cells {
+        for raw_txt in cell.text().filter(|t| !t.trim().is_empty()) {
+            let txt = whitespace_regex.replace_all(raw_txt.trim(), " ");
+            if found_header {
+                return Some(txt.to_string())
+            }
+            else if txt == *header_name {
+                // We store the value of the next sibling cell as the name
+                found_header = true;
+            }
+        }
+    }
+    return None
 }
 
 fn insert_water_detail(water_detail: &WaterDetail) -> Result<i64, rusqlite::Error> {
