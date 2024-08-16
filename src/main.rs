@@ -272,17 +272,18 @@ fn main() {
                             }
                             // In case availability is left blank, we must add 
                             // an empty string to row data so that the length is 5.
-                            while row_data.len() < 5 {
-                                row_data.push("".to_string());
+                            if row_data.len() != 0 {
+                                while row_data.len() < 5 {
+                                    row_data.push("".to_string());
+                                }
+                                relationships.push(BuyerSellerRelationship {
+                                    seller: row_data[0].clone(),
+                                    buyer_name: row_data[1].clone(),
+                                    buyer: row_data[2].clone(),
+                                    population: row_data[3].clone(),
+                                    availability: row_data[4].clone()
+                                });
                             }
-                            
-                            relationships.push(BuyerSellerRelationship {
-                                seller: row_data[0].clone(),
-                                buyer_name: row_data[1].clone(),
-                                buyer: row_data[2].clone(),
-                                population: row_data[3].clone(),
-                                availability: row_data[4].clone()
-                            });
                         }
                         for (r_idx, r) in relationships.iter().enumerate() {
                             println!("row: {}", r_idx);
