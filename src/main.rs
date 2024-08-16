@@ -12,7 +12,7 @@ pub struct BuyerSellerRelationship {
 
 #[derive(Default, Debug)]
 pub struct WaterDetail {
-    pub is_number: String,
+    pub is_number: Option<String>,
     pub st_code: String,
     pub ws_number: String,
     pub name: Option<String>
@@ -21,7 +21,7 @@ pub struct WaterDetail {
 impl WaterDetail {
     fn url(& self) -> minreq::URL {
         minreq::URL::from("https://dww2.tceq.texas.gov/DWW/JSP/WaterSystemDetail.jsp?tinwsys_is_number=".to_string() 
-            + &self.is_number 
+            + &self.is_number.clone().expect("Missing is_number. Cannot build URL.")
             + "&tinwsys_st_code=" 
             + &self.st_code 
             + "&wsnumber=" 
@@ -200,7 +200,7 @@ fn main() {
             .records()
             .map(|record| {
                 WaterDetail {
-                    is_number: record.as_ref().unwrap().get(*header_map.get(is_header_arg).unwrap()).unwrap().to_string(),
+                    is_number: Some(record.as_ref().unwrap().get(*header_map.get(is_header_arg).unwrap()).unwrap().to_string()),
                     st_code: record.as_ref().unwrap().get(*header_map.get(st_header_arg).unwrap()).unwrap().to_string(),
                     ws_number: record.as_ref().unwrap().get(*header_map.get(ws_header_arg).unwrap()).unwrap().to_string(),
                     name: None // Name gets scraped from the page
@@ -286,8 +286,18 @@ fn main() {
                             }
                         }
                         for (r_idx, r) in relationships.iter().enumerate() {
-                            println!("row: {}", r_idx);
-                            println!("{:#?}", r);
+                            //println!("row: {}", r_idx);
+                            //println!("{:#?}", r);
+                            if parsed_water_details.get(&r.buyer.clone()).is_none() {
+                                let wd = WaterDetail {
+                                    ws_number: r.buyer.clone(),
+                                    st_code: r.buyer[..2].to_string(),
+                                    name: Some(r.buyer_name.clone()),
+                                    is_number: None
+                                };
+                                println!("{:#?}", wd);
+                                parsed_water_details.insert(wd.ws_number.clone(), wd);
+                            }
                         }
                         println!("Finished scraping.");
                     }
