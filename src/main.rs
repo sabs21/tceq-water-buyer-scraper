@@ -2,6 +2,7 @@ use clap::{arg, value_parser, Command, ArgAction};
 
 // Includes necessary sql queries into the shipped exe
 static INSERT_WATER_DETAIL_SQL: &'static str = include_str!("../src/queries/insert_water_detail.sql");
+static INSERT_BUYER_SELLER_RELATIONSHIP_SQL: &'static str = include_str!("../src/queries/insert_buyer_seller_relationship.sql");
 
 #[derive(Default, Debug)]
 pub struct BuyerSellerRelationship {
@@ -37,7 +38,6 @@ fn main() {
     unsafe {
         std::env::set_var("RUST_BACKTRACE", "1");
     }
-    
     
     // Make the default output file name: /current/env/path/[datetime]_out.csv
     let mut default_output_path: std::ffi::OsString = std::env::current_dir().unwrap().as_os_str().to_owned();
@@ -219,6 +219,7 @@ fn main() {
     for (idx, detail) in input_water_details.iter_mut().enumerate() {
         // Debugging purposes
         //println!("{:#?}", detail);
+        println!("Scraping water detail {}...", detail.ws_number);
         let url: minreq::URL = detail.url();
         match minreq::get(&url).send() {
             Ok(response) => {
@@ -302,18 +303,31 @@ fn main() {
                                     name: Some(r.buyer_name.clone()),
                                     is_number: None
                                 };
-                                println!("{:#?}", wd);
+                                //println!("{:#?}", wd);
                                 parsed_water_details.insert(wd.ws_number.clone(), wd.clone());
                                 // Insert new water details into database
-                                if insert_water_detail(&wd).is_err() {
-                                    println!("Failed to write water detail {} to database.", wd.ws_number);
+                                if insert_water_detail(&wd).is_ok() {
+                                    println!("Added water detail {} to database.", wd.ws_number);
+                                }
+                                else {
+                                    println!("Skipped water detail {} because it already exists in database.", wd.ws_number);
                                 }
                             }
                         }
 
                         // Insert new buyer/seller relationships into database
-                        
-                        println!("Finished scraping.");
+                        for r in relationships.iter() {
+                            //println!("row: {}", r_idx);
+                            //println!("{:#?}", r);
+                            if insert_buyer_seller_relationship(r).is_ok() {
+                                println!("Added relationship '{} sells to {}' to database.", r.buyer, r.seller);
+                            }
+                            else {
+                                println!("Skipped relationship '{} sells to {}' because it already exists in database.", r.buyer, r.seller);
+                            }
+                        }
+
+                        println!("Finished scraping {}.", detail.ws_number);
                     }
                 }
             },
@@ -368,9 +382,21 @@ fn insert_water_detail(water_detail: &WaterDetail) -> Result<i64, rusqlite::Erro
     let mut stmt = conn.prepare(INSERT_WATER_DETAIL_SQL).unwrap();
     let result = stmt.insert(rusqlite::named_params! {
         ":water_system_no": water_detail.ws_number,
-        ":name": water_detail.name,
+        ":water_system_name": water_detail.name,
         ":state_code": water_detail.st_code,
         ":is_no": water_detail.is_number,
+    });
+    return result
+}
+
+fn insert_buyer_seller_relationship(relationship: &BuyerSellerRelationship) -> Result<i64, rusqlite::Error> {
+    let conn = rusqlite::Connection::open("./water_buyer_relationships.db3").unwrap();
+    let mut stmt = conn.prepare(INSERT_BUYER_SELLER_RELATIONSHIP_SQL).unwrap();
+    let result = stmt.insert(rusqlite::named_params! {
+        ":seller": relationship.seller,
+        ":buyer": relationship.buyer,
+        ":population": relationship.population,
+        ":availability": relationship.availability
     });
     return result
 }
