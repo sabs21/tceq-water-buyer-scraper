@@ -216,6 +216,7 @@ fn main() {
     let delay: u32 = *arg_matches.get_one::<u32>("delay").expect("output file is missing a default value.");
     println!("Sending requests for each water detail every {} milliseconds...", delay);
     let whitespace_regex = regex::Regex::new(r"\s+").unwrap();
+    let mut conn = rusqlite::Connection::open("./water_buyer_relationships.db3").unwrap();
     for (idx, detail) in input_water_details.iter_mut().enumerate() {
         // Debugging purposes
         //println!("{:#?}", detail);
@@ -245,9 +246,14 @@ fn main() {
                         name: detail.name.clone()
                     };
                     parsed_water_details.insert(detail.name.clone().unwrap(), root_water_detail.clone());
-                    if insert_water_detail(&root_water_detail).is_err() {
-                        println!("Failed to write water detail {} to database.", root_water_detail.ws_number);
-                    }
+                    println!("Adding water detail {} if it doesn't already exist...", detail.ws_number);
+                    let single_wd_tx = conn.transaction().unwrap();
+                    let _ = insert_water_detail(&root_water_detail, &single_wd_tx).inspect_err(|e| {
+                        println!("Failed to write water detail {} due to a database error. {}", root_water_detail.ws_number, e);
+                    });
+                    single_wd_tx.commit().expect(format!("Failed to commit the insertion of {}", detail.ws_number).as_str());
+                    println!("Added water detail {}", detail.ws_number);
+                    
                     if let Some(wbt) = get_table_by_name(&"Buyers of Water".to_string(), &dom) {
                         let row_selector = scraper::Selector::parse("tbody tr td").expect("Unable to find table rows");
                         //println!("Found buyers of water table!");
@@ -293,6 +299,9 @@ fn main() {
                                 });
                             }
                         }
+                        
+                        println!("Adding all water details found within the 'Buyers of Water' table...");
+                        let wd_tx = conn.transaction().unwrap();
                         for r in relationships.iter() {
                             //println!("row: {}", r_idx);
                             //println!("{:#?}", r);
@@ -306,27 +315,25 @@ fn main() {
                                 //println!("{:#?}", wd);
                                 parsed_water_details.insert(wd.ws_number.clone(), wd.clone());
                                 // Insert new water details into database
-                                if insert_water_detail(&wd).is_ok() {
-                                    println!("Added water detail {} to database.", wd.ws_number);
-                                }
-                                else {
-                                    println!("Skipped water detail {} because it already exists in database.", wd.ws_number);
-                                }
+                                let _ = insert_water_detail(&wd, &wd_tx).inspect_err(|e| {
+                                    println!("Skipped water detail {} due to a database error. {}", wd.ws_number, e);
+                                });
                             }
                         }
-
+                        wd_tx.commit().expect("Failed to commit the insertion of all water details");
+                        println!("Added all water details found within the 'Buyers of Water' table.");
+                        println!("Adding all relationships found within the 'Buyers of Water' table...");
+                        let r_tx = conn.transaction().unwrap();
                         // Insert new buyer/seller relationships into database
                         for r in relationships.iter() {
                             //println!("row: {}", r_idx);
                             //println!("{:#?}", r);
-                            if insert_buyer_seller_relationship(r).is_ok() {
-                                println!("Added relationship '{} sells to {}' to database.", r.buyer, r.seller);
-                            }
-                            else {
-                                println!("Skipped relationship '{} sells to {}' because it already exists in database.", r.buyer, r.seller);
-                            }
+                            let _ = insert_buyer_seller_relationship(r, &r_tx).inspect_err(|e| {
+                                println!("Skipped relationship '{} sells to {}' due to a database error. {}", r.buyer, r.seller, e);
+                            });
                         }
-
+                        r_tx.commit().expect("Failed to commit the insertion of all buyer/seller relationships");
+                        println!("Added all relationships found within the 'Buyers of Water' table.");
                         println!("Finished scraping {}.", detail.ws_number);
                     }
                 }
@@ -334,6 +341,7 @@ fn main() {
             Err(e) => println!("Failed to extract data because the request was unsuccessful. CSV Row number: {} | Error: {}", idx+1, e)
         }
     }
+    conn.close().expect("Failed to close connection to water_buyer_relationships database");
 }
 
 fn get_table_by_name<'a>(name: &'a String, dom: &'a scraper::Html) -> Option<scraper::ElementRef<'a>> {
@@ -377,9 +385,8 @@ fn get_value_from_header(header_name: &String, table: &scraper::ElementRef) -> O
     return None
 }
 
-fn insert_water_detail(water_detail: &WaterDetail) -> Result<i64, rusqlite::Error> {
-    let conn = rusqlite::Connection::open("./water_buyer_relationships.db3").unwrap();
-    let mut stmt = conn.prepare(INSERT_WATER_DETAIL_SQL).unwrap();
+fn insert_water_detail(water_detail: &WaterDetail, tx: &rusqlite::Transaction) -> Result<i64, rusqlite::Error> {
+    let mut stmt = tx.prepare(INSERT_WATER_DETAIL_SQL).unwrap();
     let result = stmt.insert(rusqlite::named_params! {
         ":water_system_no": water_detail.ws_number,
         ":water_system_name": water_detail.name,
@@ -389,9 +396,8 @@ fn insert_water_detail(water_detail: &WaterDetail) -> Result<i64, rusqlite::Erro
     return result
 }
 
-fn insert_buyer_seller_relationship(relationship: &BuyerSellerRelationship) -> Result<i64, rusqlite::Error> {
-    let conn = rusqlite::Connection::open("./water_buyer_relationships.db3").unwrap();
-    let mut stmt = conn.prepare(INSERT_BUYER_SELLER_RELATIONSHIP_SQL).unwrap();
+fn insert_buyer_seller_relationship(relationship: &BuyerSellerRelationship, tx: &rusqlite::Transaction) -> Result<i64, rusqlite::Error> {
+    let mut stmt = tx.prepare(INSERT_BUYER_SELLER_RELATIONSHIP_SQL).unwrap();
     let result = stmt.insert(rusqlite::named_params! {
         ":seller": relationship.seller,
         ":buyer": relationship.buyer,
