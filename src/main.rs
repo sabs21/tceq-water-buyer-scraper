@@ -284,10 +284,13 @@ fn main() {
                                     row_data.push(relationship_text.trim().to_string());
                                 }
                             }
-                            // In case availability is left blank, we must add 
-                            // an empty string to row data so that the length is 5.
                             if row_data.len() != 0 {
+                                if row_data[0] == "No Buyers" {
+                                    break;
+                                }
                                 while row_data.len() < 5 {
+                                    // In case availability is left blank, we must add 
+                                    // an empty string to row data so that the length is 5.
                                     row_data.push("".to_string());
                                 }
                                 relationships.push(BuyerSellerRelationship {
