@@ -338,6 +338,8 @@ fn main() {
                         r_tx.commit().expect("Failed to commit the insertion of all buyer/seller relationships");
                         println!("Added all relationships found within the 'Buyers of Water' table.");
                         println!("Finished scraping {}.", detail.ws_number);
+                        println!("Waiting {} milliseconds before getting next page...", delay);
+                        std::thread::sleep(std::time::Duration::from_millis(delay.into()));
                     }
                 }
             },
