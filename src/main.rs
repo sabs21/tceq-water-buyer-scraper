@@ -212,6 +212,9 @@ fn main() {
             .collect();
     println!("Rows successfully read.");
 
+    // Precompute created timestamp
+    let created_timestamp: String = chrono::prelude::Local::now().format("%m-%d-%Y %H:%M:%S").to_string();
+
     // Get HTML page of each water detail url
     let delay: u32 = *arg_matches.get_one::<u32>("delay").expect("output file is missing a default value.");
     println!("Sending requests for each water detail every {} milliseconds...", delay);
@@ -248,7 +251,7 @@ fn main() {
                     parsed_water_details.insert(detail.name.clone().unwrap(), root_water_detail.clone());
                     println!("Adding water detail {} if it doesn't already exist...", detail.ws_number);
                     let single_wd_tx = conn.transaction().unwrap();
-                    let _ = insert_water_detail(&root_water_detail, &single_wd_tx).inspect_err(|e| {
+                    let _ = insert_water_detail(&root_water_detail, &single_wd_tx, &created_timestamp).inspect_err(|e| {
                         println!("Failed to write water detail {} due to a database error. {}", root_water_detail.ws_number, e);
                     });
                     single_wd_tx.commit().expect(format!("Failed to commit the insertion of {}", detail.ws_number).as_str());
@@ -318,7 +321,7 @@ fn main() {
                                 //println!("{:#?}", wd);
                                 parsed_water_details.insert(wd.ws_number.clone(), wd.clone());
                                 // Insert new water details into database
-                                let _ = insert_water_detail(&wd, &wd_tx).inspect_err(|e| {
+                                let _ = insert_water_detail(&wd, &wd_tx, &created_timestamp).inspect_err(|e| {
                                     println!("Skipped water detail {} due to a database error. {}", wd.ws_number, e);
                                 });
                             }
@@ -331,7 +334,7 @@ fn main() {
                         for r in relationships.iter() {
                             //println!("row: {}", r_idx);
                             //println!("{:#?}", r);
-                            let _ = insert_buyer_seller_relationship(r, &r_tx).inspect_err(|e| {
+                            let _ = insert_buyer_seller_relationship(r, &r_tx, &created_timestamp).inspect_err(|e| {
                                 println!("Skipped relationship '{} sells to {}' due to a database error. {}", r.buyer, r.seller, e);
                             });
                         }
@@ -390,24 +393,34 @@ fn get_value_from_header(header_name: &String, table: &scraper::ElementRef) -> O
     return None
 }
 
-fn insert_water_detail(water_detail: &WaterDetail, tx: &rusqlite::Transaction) -> Result<i64, rusqlite::Error> {
+fn insert_water_detail(
+    water_detail: &WaterDetail, 
+    tx: &rusqlite::Transaction, 
+    created_timestamp: &String
+) -> Result<i64, rusqlite::Error> {
     let mut stmt = tx.prepare(INSERT_WATER_DETAIL_SQL).unwrap();
     let result = stmt.insert(rusqlite::named_params! {
         ":water_system_no": water_detail.ws_number,
         ":water_system_name": water_detail.name,
         ":state_code": water_detail.st_code,
         ":is_no": water_detail.is_number,
+        ":created_timestamp": created_timestamp
     });
     return result
 }
 
-fn insert_buyer_seller_relationship(relationship: &BuyerSellerRelationship, tx: &rusqlite::Transaction) -> Result<i64, rusqlite::Error> {
+fn insert_buyer_seller_relationship(
+    relationship: &BuyerSellerRelationship,
+    tx: &rusqlite::Transaction, 
+    created_timestamp: &String
+) -> Result<i64, rusqlite::Error> {
     let mut stmt = tx.prepare(INSERT_BUYER_SELLER_RELATIONSHIP_SQL).unwrap();
     let result = stmt.insert(rusqlite::named_params! {
         ":seller": relationship.seller,
         ":buyer": relationship.buyer,
         ":population": relationship.population,
-        ":availability": relationship.availability
+        ":availability": relationship.availability,
+        ":created_timestamp": created_timestamp
     });
     return result
 }

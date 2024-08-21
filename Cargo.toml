@@ -10,3 +10,4 @@ scraper = { version = "0.20.0" }
 minreq = { version = "2.11.2", features = ["https-rustls"] }
 rusqlite = { version = "0.31.0", features = ["bundled"] }
 regex = "1.10.6"
+chrono = { version = "0.4.38", features = ["clock"] }
