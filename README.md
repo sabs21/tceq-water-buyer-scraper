@@ -9,7 +9,8 @@ This release includes everything you need to get going, including:
 - SQLite database which the scraper uses to store each water detail and relationship.
 - Examples to follow for how to format the input CSV.
 
-Note: The output argument is currently non-functional.
+Note: The output argument is currently non-functional. All output is stored within water_buyer_relationships.db3.
+
 WARNING: **DO NOT RENAME "water_buyer_relationships.db3" OR ELSE THE SCRAPER WILL NOT WORK!** 
 
 Tool for accessing, interacting with, and exporting the database:
