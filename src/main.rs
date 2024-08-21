@@ -213,7 +213,7 @@ fn main() {
     println!("Rows successfully read.");
 
     // Precompute created timestamp
-    let created_timestamp: String = chrono::prelude::Local::now().format("%m-%d-%Y %H:%M:%S").to_string();
+    let created_timestamp: String = chrono::prelude::Local::now().format("%m-%d-%Y").to_string();
 
     // Get HTML page of each water detail url
     let delay: u32 = *arg_matches.get_one::<u32>("delay").expect("output file is missing a default value.");
