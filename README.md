@@ -2,7 +2,7 @@
 A CLI tool that quickly fetches and stores water buyer relationship data from the TCEQ website.
 
 ## Getting Started
-To get started, open up the TCEQ Scraper v0.1 folder in command line, then run ".\tceq-scraper -h" without quotes. This is a CLI tool, so you'll need to interact with tceq-scraper.exe this VIA command line. 
+To get started, open up the TCEQ Scraper release folder in command line, then run ".\tceq-scraper -h" without quotes. This is a CLI tool, so you'll need to interact with tceq-scraper.exe this VIA command line. 
 
 This release includes everything you need to get going, including:
 - The scraper itself.
